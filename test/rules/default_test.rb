@@ -62,4 +62,13 @@ class DefaultTest < Minitest::Test
   def test_default_value_for_array_element_where_parent_does_not_exist_must_not_be_set
     assert_nil(@validated['dependents'][2]['needs'])
   end
+
+  def test_default_value_must_be_set_for_all_array_indexes
+    validator = MiniDefender::Validator.new(
+      { 'items' => 'array', 'items.*' => 'hash', 'items.*.flag' => 'boolean|default:false' },
+      { 'items' => Array.new(12) { {} } }
+    )
+
+    assert_equal [false] * 12, validator.coerced['items'].map { |item| item['flag'] }
+  end
 end

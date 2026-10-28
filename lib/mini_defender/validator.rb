@@ -45,7 +45,7 @@ module MiniDefender
         parent += sep
 
         # If parent or a sibling exists, add the default value
-        pattern = Regexp.new("\\A#{parent.gsub('*', '\d')}\\z")
+        pattern = RulesExpander.wildcard(parent).first
         additions = {}
         @data.each do |k, _|
           unless k.match?(pattern)

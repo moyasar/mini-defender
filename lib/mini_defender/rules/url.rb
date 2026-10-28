@@ -6,6 +6,7 @@ require 'public_suffix'
 
 class MiniDefender::Rules::Url < MiniDefender::Rule
   ALLOWED_MODIFIERS = %w[https public not_ip not_private]
+  ALLOWED_SCHEMES = %w[http https].freeze
 
   def initialize(modifiers = [])
     @modifiers = Array(modifiers).map(&:to_s)
@@ -37,7 +38,7 @@ class MiniDefender::Rules::Url < MiniDefender::Rule
         return false
       end
 
-      unless %w[http https].include?(uri.scheme)
+      unless ALLOWED_SCHEMES.include?(uri.scheme)
         @validation_error = 'URL protocol must be HTTP or HTTPS.'
         return false
       end

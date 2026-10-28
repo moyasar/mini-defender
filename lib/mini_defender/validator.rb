@@ -2,6 +2,9 @@
 
 module MiniDefender
   class Validator
+    INDEX_PATTERN = /\A\d+\z/
+    MISSING = Object.new.freeze
+
     attr_reader :rules, :data, :errors
 
     def initialize(rules, data)
@@ -13,6 +16,7 @@ module MiniDefender
       @expander = RulesExpander.new
       @factory = RulesFactory.new
       @array_patterns = @expander.array_patterns(rules)
+      @neighbors_cache = nil
     end
 
     def validate
@@ -22,9 +26,8 @@ module MiniDefender
 
       @errors = {}
 
-      data_rules = @rules.to_h do |k, set|
-        [k, @factory.init_set(set)]
-      end
+      data_rules = {}
+      @rules.each { |k, set| data_rules[k] = @factory.init_set(set) }
 
       # Set default values for missing data key compared to rules
       defaults_rules = data_rules.filter { |k, set| set.any? { |r| r.defaults?(self) } }
@@ -62,21 +65,25 @@ module MiniDefender
       end
 
       data_rules = @expander.expand(data_rules, @data)
+
+      # Data does not change from here on, so rules can share neighbor lookups
+      @neighbors_cache = {}
+      current = errors = nil
+
       data_rules.each do |k, rule_set|
-        @errors[k] = []
+        current = k
+        errors = nil
+        value = coerced = @data.fetch(k, MISSING)
 
-        value_included = true
-        required = rule_set.any? { |r| r.implicit?(self) }
-
-        unless @data.key?(k)
-          if required
-            @errors[k] << 'This field is missing.'
+        if MISSING.equal?(value)
+          if rule_set.any? { |r| r.implicit?(self) }
+            @errors[k] = ['This field is missing.']
           end
 
           next
         end
 
-        value = coerced = @data[k]
+        value_included = true
         force_coerce = false
 
         rule_set.each do |rule|
@@ -88,21 +95,45 @@ module MiniDefender
             coerced = rule.coerce(coerced)
             force_coerce = rule.force_coerce?
           else
-            @errors[k] << rule.error_message(k, coerced, self)
+            (errors ||= []) << rule.error_message(k, coerced, self)
           end
+        end
+
+        unless errors.nil?
+          @errors[k] = errors
+          next
         end
 
         if force_coerce
           value = coerced
         end
 
-        if @errors[k].empty? && value_included
+        if value_included
           @validated[k] = value
           @coerced[k] = coerced
         end
       end
+    rescue Exception
+      # Only failing keys are recorded, but when a rule raises, leave an entry
+      # for every key reached so far, so the validator does not pass afterwards
+      unless current.nil?
+        partial = {}
 
-      @errors.reject! { |_, v| v.empty? }
+        data_rules.each_key do |k|
+          if k.equal?(current)
+            partial[k] = errors || []
+            break
+          end
+
+          partial[k] = @errors[k] || []
+        end
+
+        @errors = partial
+      end
+
+      raise
+    ensure
+      @neighbors_cache = nil
     end
 
     def validate!
@@ -134,8 +165,14 @@ module MiniDefender
 
     # @return [Hash]
     def neighbors(key, level = 1)
-      pattern = leveled_search_pattern(key, level)
-      @data.filter { |k, _| k.match?(pattern) }
+      source = leveled_search_source(key, level)
+
+      if @neighbors_cache.nil?
+        return find_neighbors(source)
+      end
+
+      # Frozen since the same hash is handed to every rule during validation
+      @neighbors_cache[source] ||= find_neighbors(source).freeze
     end
 
     # @return [Array]
@@ -145,7 +182,12 @@ module MiniDefender
 
     private
 
-    def leveled_search_pattern(key, level = 1)
+    def find_neighbors(source)
+      pattern = Regexp.compile(source)
+      @data.filter { |k, _| k.match?(pattern) }
+    end
+
+    def leveled_search_source(key, level = 1)
       search_key = key.split('.').map{ |part| Regexp.quote(part) }.reverse
 
       # Change array indexes to digits pattern according to the desired level
@@ -156,59 +198,127 @@ module MiniDefender
         level -= 1
       end
 
-      Regexp.compile("\\A#{search_key.reverse.join('\.')}\\z")
+      "\\A#{search_key.reverse.join('\.')}\\z"
     end
 
     def compact_expanded(hash)
       expanded = {}
 
+      # Nodes by their key, so that sibling keys do not walk the tree from the
+      # root again. Cleared whenever a node gets replaced.
+      nodes = {}
+
       hash.each do |k, v|
-        keys = k.split('.')
-        node = expanded
-
-        while keys.length > 1
-          next_key = keys.shift
-          next_node = (node[next_key] ||= {})
-
-          if next_node.is_a?(Array)
-            node[next_key] = next_node = next_node.each_with_index.to_h do |value, index|
-              [index.to_s, value]
-            end
-          end
-
-          node = next_node
+        # String#split drops trailing empty keys, which slicing does not
+        unless k.is_a?(String) && !k.empty? && !k.end_with?('.')
+          expand_key(expanded, k, v)
+          nodes.clear
+          next
         end
 
-        node[keys.shift] = v
+        dot = k.rindex('.')
+
+        if dot.nil?
+          nodes.clear if expanded[k].is_a?(Hash)
+          expanded[k] = v
+          next
+        end
+
+        node = expanded_node(expanded, nodes, k[0, dot].freeze)
+
+        if node.nil?
+          expand_key(expanded, k, v)
+          nodes.clear
+          next
+        end
+
+        leaf = k[dot + 1, k.length]
+        nodes.clear if node[leaf].is_a?(Hash)
+        node[leaf] = v
       end
 
-      compact_keys(expanded)
+      compact_keys(expanded, [])
     end
 
-    def compact_keys(hash, current_key = '')
-      current_key_suffixed = if current_key == ''
-        ''
-      else
-        "#{current_key}."
+    # Finds or creates the hash at the given key, nil when a value that is
+    # not a hash is in the way.
+    def expanded_node(expanded, nodes, key)
+      node = nodes[key]
+      return node unless node.nil?
+
+      dot = key.rindex('.')
+      parent = dot.nil? ? expanded : expanded_node(expanded, nodes, key[0, dot].freeze)
+      return nil if parent.nil?
+
+      child_key = dot.nil? ? key : key[dot + 1, key.length]
+      node = (parent[child_key] ||= {})
+
+      if node.is_a?(Array)
+        parent[child_key] = node = indexed_hash(node)
       end
 
-      result = hash.to_h do |k, v|
-        [k, v.is_a?(Hash) ? compact_keys(v, current_key_suffixed + k) : v]
+      return nil unless node.is_a?(Hash)
+
+      nodes[key] = node
+    end
+
+    # Walks the tree from the root, for keys the fast path does not cover
+    def expand_key(expanded, k, v)
+      keys = k.split('.')
+      node = expanded
+
+      while keys.length > 1
+        next_key = keys.shift
+        next_node = (node[next_key] ||= {})
+
+        if next_node.is_a?(Array)
+          node[next_key] = next_node = indexed_hash(next_node)
+        end
+
+        node = next_node
       end
 
-      if result.empty?
-        return result
-      end
+      node[keys.shift] = v
+    end
 
-      unless @array_patterns.any? { |p| p.match?("#{current_key_suffixed}#{result.keys.first}") }
-        return result
-      end
-
-      if result.all? { |k, _v| k.match?(/\A\d+\z/) }
-        return result.values
-      end
-
+    def indexed_hash(array)
+      result = {}
+      array.each_with_index { |value, index| result[index.to_s] = value }
       result
+    end
+
+    # Copies the tree, turning hashes that hold array elements back into arrays.
+    # @param [Array] path Keys leading to the current hash
+    def compact_keys(hash, path)
+      result = {}
+      indexes = true
+
+      hash.each do |k, v|
+        if v.is_a?(Hash)
+          path.push(k)
+          v = compact_keys(v, path)
+          path.pop
+        end
+
+        result[k] = v
+        indexes &&= (k.is_a?(String) || k.is_a?(Symbol)) && k.match?(INDEX_PATTERN)
+      end
+
+      if result.empty? || !indexes
+        return result
+      end
+
+      element_key = "#{key_prefix(path)}#{result.each_key.first}"
+
+      unless @array_patterns.any? { |p| p.match?(element_key) }
+        return result
+      end
+
+      result.values
+    end
+
+    def key_prefix(path)
+      path.reduce('') { |prefix, k| prefix == '' && k == '' ? '' : "#{prefix}#{k}." }
     end
 
     def missing_value?(value)

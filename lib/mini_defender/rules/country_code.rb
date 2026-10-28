@@ -4,6 +4,8 @@ require 'countries'
 
 class MiniDefender::Rules::CountryCode < MiniDefender::Rule
   COUNTRIES = ISO3166::Country.pluck(:alpha2).flatten
+  COUNTRIES_LOOKUP = COUNTRIES.to_h { |code| [code, true] }.freeze
+  private_constant :COUNTRIES_LOOKUP
 
   def self.signature
     'country_code'
@@ -14,7 +16,7 @@ class MiniDefender::Rules::CountryCode < MiniDefender::Rule
   end
 
   def passes?(attribute, value, validator)
-    value.is_a?(String) && COUNTRIES.include?(value.strip.upcase)
+    value.is_a?(String) && COUNTRIES_LOOKUP.key?(value.strip.upcase)
   end
 
   def message(attribute, value, validator)

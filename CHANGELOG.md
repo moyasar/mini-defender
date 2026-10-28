@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+- Speed up validation and cut memory allocations, especially for large payloads and the `distinct` rule
+- Match wildcard rule keys literally apart from `*`, so `items.*.name` no longer matches keys such as `itemsX0Xname`
+
 ## [0.7.3] - 2025-09-12
 
 - Fix hostname coercion

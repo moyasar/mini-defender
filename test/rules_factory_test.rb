@@ -36,4 +36,26 @@ class RulesFactoryTest < Minitest::Test
 
     assert_equal 255, result[2].instance_variable_get('@size')
   end
+
+  def test_factory_should_find_rules_registered_later
+    rule = Class.new(MiniDefender::Rule) do
+      def self.signature
+        'factory_test_rule'
+      end
+    end
+
+    assert_raises(ArgumentError) { @factory.init_rule('factory_test_rule') }
+
+    MiniDefender::RulesFactory.register(rule)
+
+    assert_kind_of rule, @factory.init_rule('factory_test_rule')
+  ensure
+    MiniDefender::RulesFactory.blueprints.delete(rule)
+  end
+
+  def test_factory_should_pass_arguments_like_split
+    assert_equal %w[a b], @factory.init_rule('in:a,b').instance_variable_get('@values')
+    assert_equal %w[a b], @factory.init_rule('in:a,b::').instance_variable_get('@values')
+    assert_equal %w[a:b c], @factory.init_rule('in:a:b,c').instance_variable_get('@values')
+  end
 end

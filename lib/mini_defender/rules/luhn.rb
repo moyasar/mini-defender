@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class MiniDefender::Rules::Luhn < MiniDefender::Rule
+  DOUBLE_SUM = [0, 2, 4, 6, 8, 1, 3, 5, 7, 9].freeze
+
   def self.signature
     'luhn'
   end
@@ -9,11 +11,10 @@ class MiniDefender::Rules::Luhn < MiniDefender::Rule
     value = value.to_s
     return false unless value.match?(/\A\d+\z/)
 
-    double_sum = [0, 2, 4, 6, 8, 1, 3, 5, 7, 9]
     sum = 0
 
     value.to_i.digits.each_with_index do |digit, index|
-      sum += index.even? ? digit : double_sum[digit]
+      sum += index.even? ? digit : DOUBLE_SUM[digit]
     end
 
     sum % 10 === 0

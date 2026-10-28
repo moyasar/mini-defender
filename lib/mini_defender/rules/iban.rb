@@ -13,6 +13,8 @@ class MiniDefender::Rules::Iban < MiniDefender::Rule
     'Y' => '34', 'Z' => '35'
   }
 
+  REPLACEMENTS_PATTERN = Regexp.union(REPLACEMENTS.keys)
+
   def self.signature
     'iban'
   end
@@ -28,7 +30,7 @@ class MiniDefender::Rules::Iban < MiniDefender::Rule
 
   def valid_checksum?(iban)
     iban = "#{iban[4..]}#{iban[0..1]}#{iban[2..3]}"
-    iban = iban.gsub(Regexp.union(REPLACEMENTS.keys), REPLACEMENTS)
+    iban = iban.gsub(REPLACEMENTS_PATTERN, REPLACEMENTS)
     iban.to_i % 97 === 1
   end
 

@@ -138,4 +138,33 @@ class ValidatorTest < Minitest::Test
     assert data['address'].key?('is_personal')
     assert data['address']['is_personal'].is_a?(FalseClass)
   end
+
+  def test_should_not_pass_after_a_rule_raises
+    rule = Class.new(MiniDefender::Rule) do
+      def passes?(attribute, value, validator)
+        raise 'boom'
+      end
+    end
+
+    v = MiniDefender::Validator.new({ 'a' => 'string', 'b' => [rule.new] }, { 'a' => 'x', 'b' => 'y' })
+
+    assert_raises(RuntimeError) { v.validate }
+    assert v.fails?
+    assert_equal({ 'a' => [], 'b' => [] }, v.errors)
+  end
+
+  def test_should_rebuild_arrays_in_validated_data
+    v = MiniDefender::Validator.new(
+      { 'items' => 'array', 'items.*' => 'hash', 'items.*.tags' => 'array', 'items.*.tags.*' => 'string' },
+      { 'items' => [{ 'tags' => %w[a b] }, { 'tags' => [] }], 'extra' => 1 }
+    )
+
+    assert_equal({ 'items' => [{ 'tags' => %w[a b] }, { 'tags' => [] }] }, v.validated)
+  end
+
+  def test_should_nest_validated_keys_with_empty_segments
+    v = MiniDefender::Validator.new({ 'a.' => 'integer', 'b..c' => 'integer' }, { 'a' => { '' => 1 }, 'b' => { '' => { 'c' => 2 } } })
+
+    assert_equal({ 'a' => 1, 'b' => { '' => { 'c' => 2 } } }, v.validated)
+  end
 end

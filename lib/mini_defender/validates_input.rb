@@ -15,11 +15,19 @@ module MiniDefender::ValidatesInput
   def cleanse_data(data, depth = 1)
     return data if depth > 16
 
+    # Build each result once instead of copying it again to drop nil values
     case data
       when Array
-        data.map{ |v| cleanse_data(v, depth + 1) }.reject(&:nil?)
+        result = data.map{ |v| cleanse_data(v, depth + 1) }
+        result.compact!
+        result
       when Hash
-        data.to_h{ |k, v| [k, cleanse_data(v, depth + 1)] }.compact
+        result = {}
+        data.each do |k, v|
+          v = cleanse_data(v, depth + 1)
+          result[k] = v unless v.nil?
+        end
+        result
       when String
         data = data.strip
         data = nil if data == ''

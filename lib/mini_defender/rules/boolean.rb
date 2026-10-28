@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class MiniDefender::Rules::Boolean < MiniDefender::Rule
+  ALLOWED_VALUES = [1, 0, '1', '0', 'yes', 'no', 'on', 'off', 'true', 'false'].freeze
+
   def self.signature
     'boolean'
   end
@@ -20,7 +22,7 @@ class MiniDefender::Rules::Boolean < MiniDefender::Rule
   def passes?(attribute, value, validator)
     value = value.downcase if value.is_a?(String)
     value.is_a?(TrueClass) || value.is_a?(FalseClass) ||
-      [1, 0, '1', '0', 'yes', 'no', 'on', 'off', 'true', 'false'].include?(value)
+      ALLOWED_VALUES.include?(value)
   end
 
   def message(attribute, value, validator)

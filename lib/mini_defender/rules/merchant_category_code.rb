@@ -994,7 +994,7 @@ class MiniDefender::Rules::MerchantCategoryCode < MiniDefender::Rule
   end
 
   def passes?(attribute, value, validator)
-    MERCHANT_CATEGORIES.keys.include?(value.to_s)
+    MERCHANT_CATEGORIES.key?(value.to_s)
   end
 
   def message(attribute, value, validator)

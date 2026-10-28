@@ -56,4 +56,20 @@ class RulesExpanderTest < Minitest::Test
       assert_equal rules, expanded_rules[k]
     end
   end
+
+  def test_wildcards_should_only_match_index_segments
+    expander = MiniDefender::RulesExpander.new
+    data = { 'items' => [{ 'name' => 'a' }], 'itemsX0Xname' => 'b', 'items.0.name2' => 'c' }
+
+    expanded_rules = expander.expand({ 'items.*.name' => 'string' }, data.flatten_keys(keep_roots: true))
+
+    assert_equal ['items.0.name'], expanded_rules.keys
+  end
+
+  def test_wildcards_without_matches_should_expand_to_first_index
+    expander = MiniDefender::RulesExpander.new
+    expanded_rules = expander.expand({ 'items.*.name' => 'required' }, {})
+
+    assert_equal({ 'items.0.name' => 'required' }, expanded_rules)
+  end
 end

@@ -23,7 +23,7 @@ class MiniDefender::Rules::DateEq < MiniDefender::Rule
     @valid_value = true
 
     value == @target_date
-  rescue ArgumentError
+  rescue ArgumentError, TypeError
     false
   end
 

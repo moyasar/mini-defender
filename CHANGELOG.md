@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-14
+
+- Date rules fail validation for non-string values instead of raising TypeError
+
 ## [0.7.3] - 2025-09-12
 
 - Fix hostname coercion

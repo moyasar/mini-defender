@@ -20,7 +20,7 @@ class MiniDefender::Rules::DateFormat < MiniDefender::Rule
 
   def passes?(attribute, value, validator)
     parse_date(value).is_a?(Time)
-  rescue ArgumentError
+  rescue ArgumentError, TypeError
     false
   end
 
